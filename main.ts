@@ -201,6 +201,36 @@ function forecastCase(c: Case): Array<{ id: number; q: number[] }> {
     for (const [tier, a] of acc) tierBeta.set(tier, a.bSum / a.wSum);
   }
 
+  // Tier-group rate priors: the median last rate of each tier's observed trophies. A trophy with no
+  // usable history of its own is forecast from its peers' level rather than from one flat number for
+  // every tier: tiers sit at very different rates (a data-less platinum is not a data-less bronze).
+  const tierPrior = new Map<string, number>();
+  {
+    const byTier = new Map<string, number[]>();
+    const all: number[] = [];
+    for (let i = 0; i < nT; i++) {
+      const f = fits[i];
+      if (f === null || f.lastRate === null || f.lastRate <= 0) continue;
+      const arr = byTier.get(c.trophies[i].tier) ?? [];
+      arr.push(f.lastRate);
+      byTier.set(c.trophies[i].tier, arr);
+      all.push(f.lastRate);
+    }
+    const medianOf = (xs: number[]): number => {
+      const s = [...xs].sort((a, b) => a - b);
+      return s.length % 2 === 1 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
+    };
+    const globalPrior = all.length > 0 ? medianOf(all) : NaN;
+    const tierDefault: Record<string, number> = { platinum: 0.3, gold: 1.5, silver: 4, bronze: 12 };
+    for (const t of c.trophies) {
+      if (tierPrior.has(t.tier)) continue;
+      const arr = byTier.get(t.tier);
+      tierPrior.set(t.tier, arr !== undefined && arr.length > 0
+        ? medianOf(arr)
+        : (Number.isFinite(globalPrior) ? globalPrior : (tierDefault[t.tier] ?? 5)));
+    }
+  }
+
   const baseSigma = SIGMA_PER_SQRT_DAY * Math.sqrt(horizonDays);
   const forecasts: TrophyForecast[] = [];
   for (let i = 0; i < nT; i++) {
@@ -211,9 +241,11 @@ function forecastCase(c: Case): Array<{ id: number; q: number[] }> {
     let lastE = 0;
     let fitPenalty = 0.35;
     if (f === null || pTarget <= 0) {
-      // No usable history for this trophy: a small rate and a very wide spread.
-      median = 0.5;
-      fitPenalty = 0.6;
+      // No usable history for this trophy. If its tier peers were observed, forecast from their median
+      // level, with a wider spread than any fitted trophy gets (the prior is a level, not a measurement
+      // of this trophy); with nothing observed at all, a small rate and still a very wide spread.
+      median = f === null && pTarget > 0 ? clampPct(tierPrior.get(tier) ?? 0.5) : 0.5;
+      fitPenalty = f === null && pTarget > 0 ? 0.75 : 0.6;
     } else {
       lastE = f.lastE;
       const w = Number.isFinite(f.betaRaw)

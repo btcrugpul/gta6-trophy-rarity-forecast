@@ -28,6 +28,10 @@ the program fits the two series' dynamics and divides their forecasts:
   move from the last rate capped at what a week can plausibly do. If the page
   never changed in the history (a stale page), the median also sags slightly:
   the next refresh broadens the tracked pool, which pushes most rates down.
+  A trophy with no usable history of its own is forecast from its tier
+  group's prior — the median last rate of that tier's observed trophies —
+  with a wider spread than any fitted trophy gets, instead of one flat rate
+  for every tier.
 - **Spread.** A logit-normal around the median with
   sigma ≈ 1.0·√(horizon days) — about twice the house baseline's 0.5, whose
   90-minute practice band covered nothing — plus quadrature terms for
